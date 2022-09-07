@@ -1,0 +1,708 @@
+=============================scRNA-seq-swy=====================================
+  
+
+#######################合并八个单独的主动脉瘤单细胞测序数据#####################
+setwd("J:\\04 主动脉瘤单细胞转录组\\01 原始数据")
+rt1=read.table(file = "data/GSM4704934_TAA1.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt2=read.table(file = "data/GSM4704935_TAA2.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt3=read.table(file = "data/GSM4704936_TAA3.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt4=read.table(file = "data/GSM4704937_TAA4.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt5=read.table(file = "data/GSM4704938_TAA5.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt6=read.table(file = "data/GSM4704939_TAA6.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt7=read.table(file = "data/GSM4704940_TAA7.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt8=read.table(file = "data/GSM4704941_TAA8.txt",sep="\t",header=T,row.names = 1,check.names=F)
+rt9=read.table(file = "data/GSM4704934_Con1-3.txt",sep="\t",header=T,row.names = 1,check.names=F)
+
+#sameGene1=intersect( row.names(rt1),row.names(rt2))
+#sameGene2=intersect( row.names(rt2),row.names(rt3) )
+#sameGene3=intersect( row.names(rt3),row.names(rt4) )
+#ameGene4=intersect( row.names(rt4),row.names(rt5) )
+#sameGene5=intersect( row.names(rt5),row.names(rt6) )
+#sameGene6=intersect( row.names(rt6),row.names(rt7) )
+#sameGene7=intersect( row.names(rt7),row.names(rt8) )
+
+#sameGene=intersect(sameGene1,sameGene2)
+sameGene=Reduce(intersect,list(v1 = row.names(rt1),
+                                v2 = row.names(rt2),
+                                v3 = row.names(rt3),
+                               v4 = row.names(rt4),
+                               v5 = row.names(rt5),
+                               v6 = row.names(rt6),
+                               v7 = row.names(rt7),
+                               v8 = row.names(rt8),
+                               v9 = row.names(rt9)))
+rt=cbind(rt1[sameGene,],rt2[sameGene,],rt3[sameGene,],rt4[sameGene,],rt5[sameGene,],rt6[sameGene,],rt7[sameGene,],rt8[sameGene,],rt9[sameGene,])
+#write.table(data,file="treat.txt",sep="\t",quote=F,col.names=T)
+#rt=cbind(rt4[sameGene,],rt5[sameGene,],rt6[sameGene,],rt7[sameGene,],rt8[sameGene,])
+
+
+#install.packages("Seurat")
+
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#BiocManager::install("GSVA")
+#BiocManager::install("GSEABase")
+#BiocManager::install("limma")
+#BiocManager::install("SingleR")
+#BiocManager::install("celldex")
+#BiocManager::install("monocle")
+
+
+
+###################################01.数据读取与预处理##################################
+library(limma)
+library(Seurat)
+library(dplyr)
+library(magrittr)
+library(celldex)
+library(SingleR)
+library(monocle)
+
+#ref=celldex::MouseRNAseqData()
+#ref=celldex::HumanPrimaryCellAtlasData()    ######先跑这行-----人的细胞类型注释信息
+
+logFCfilter=1               
+adjPvalFilter=0.05          
+#inputFile="treat.txt"       
+setwd("G:\\swy_TAA\\03 Con+TAA")
+
+
+#rt=read.table(inputFile, header=T, sep="\t", check.names=F)
+#rt=read.table(inputFile, header=T, sep="\t", check.names=F, row.names = 1)
+#rt=as.matrix(rt)
+#rownames(rt)=rt[,1]
+#exp=rt[,2:ncol(rt)]
+#dimnames=list(rownames(exp),colnames(exp))
+#data=matrix(as.numeric(as.matrix(exp)),nrow=nrow(exp),dimnames=dimnames)
+#data=avereps(data)
+#write.table(rt,file="new.txt",sep="\t",row.names=T,quote=F)
+data=rt
+
+pbmc = CreateSeuratObject(counts = data,project = "seurat", min.cells=3, min.features=50, names.delim = "_")
+#pbmc=CreateSeuratObject(counts = data,project = "seurat",names.delim = "_")
+
+
+pbmc[["percent.mt"]] <- PercentageFeatureSet(object = pbmc, pattern = "^MT-")
+
+pdf(file="01.featureViolin.pdf", width=10, height=6)
+VlnPlot(object = pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+#pbmc_filter=subset(x = pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 10)    #设置过滤条件
+
+
+pdf(file="01.featureCor.pdf",width=10,height=6)
+plot1 <- FeatureScatter(object = pbmc, feature1 = "nCount_RNA", feature2 = "percent.mt",pt.size=1.5)
+plot2 <- FeatureScatter(object = pbmc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",pt.size=1.5)
+CombinePlots(plots = list(plot1, plot2))
+dev.off()
+
+
+pbmc <- NormalizeData(object = pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
+
+pbmc <- FindVariableFeatures(object = pbmc, selection.method = "vst", nfeatures = 1500)
+
+top10 <- head(x = VariableFeatures(object = pbmc), 10)
+pdf(file="01.featureVar.pdf",width=10,height=6)
+plot1 <- VariableFeaturePlot(object = pbmc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CombinePlots(plots = list(plot1, plot2))
+dev.off()
+
+
+
+
+
+###################################02.PCA???ɷַ???###################################
+
+pbmc=ScaleData(pbmc)          
+pbmc=RunPCA(object= pbmc,npcs = 20,pc.genes=VariableFeatures(object = pbmc))     #PCA
+
+pdf(file="02.pcaGene.pdf",width=10,height=8)
+VizDimLoadings(object = pbmc, dims = 1:4, reduction = "pca",nfeatures = 20)
+dev.off()
+
+
+pdf(file="02.PCA.pdf",width=6.5,height=6)
+DimPlot(object = pbmc, reduction = "pca")
+dev.off()
+
+
+pdf(file="02.pcaHeatmap.pdf",width=10,height=8)
+DimHeatmap(object = pbmc, dims = 1:4, cells = 500, balanced = TRUE,nfeatures = 30,ncol=2)
+dev.off()
+
+
+pbmc <- JackStraw(object = pbmc, num.replicate = 100)
+pbmc <- ScoreJackStraw(object = pbmc, dims = 1:15)
+pdf(file="02.pcaJackStraw.pdf",width=8,height=6)
+JackStrawPlot(object = pbmc, dims = 1:15)
+dev.off()
+
+pdf(file="02.pcaElbow.pdf",width=8,height=6)
+ElbowPlot(pbmc, reduction="pca")
+dev.off()
+
+
+
+###################################03.TSNE###################################
+
+pcSelect=14
+pbmc <- FindNeighbors(object = pbmc, reduction = "pca", dims = 1:pcSelect)       
+pbmc <- FindClusters(object = pbmc, resolution = 0.5)        
+pbmc <- RunTSNE(object = pbmc, dims = 1:pcSelect,check_duplicates = FALSE)         
+pbmc2 <- RunUMAP(object = pbmc, dims = 1:pcSelect)   
+pdf(file="03.TSNE.pdf",width=5.5,height=5)
+TSNEPlot(object = pbmc, pt.size = 0.5, label = TRUE)   
+dev.off()
+pdf(file="03.UMAP.pdf",width=5.5,height=5)
+UMAPPlot(object = pbmc, pt.size = 0.5, label = TRUE)   
+dev.off()
+write.table(pbmc$seurat_clusters,file="03.tsneCluster.txt",quote=F,sep="\t",col.names=F)
+write.table(Embeddings(object = pbmc[["tsne"]]),file="03.tsneaxis.txt",quote=F,sep="\t",col.names=T)
+write.table(Embeddings(object = pbmc2[["umap"]]),file="03.umapaxis.txt",quote=F,sep="\t",col.names=T)
+
+pbmc.markers <- FindAllMarkers(object = pbmc,
+                               only.pos = FALSE,
+                               min.pct = 0.25,
+                               logfc.threshold = logFCfilter)
+sig.markers=pbmc.markers[(abs(as.numeric(as.vector(pbmc.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc.markers$p_val_adj))<adjPvalFilter),]
+write.table(sig.markers,file="03.clusterMarkers.txt",sep="\t",row.names=F,quote=F)
+
+top10 <- pbmc.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+
+pdf(file="03.tsneHeatmap.pdf",width=25,height=18)
+DoHeatmap(object = pbmc, features = top10$gene) + NoLegend()
+dev.off()
+
+
+pdf(file="03.markerViolin.pdf",width=10,height=6)
+VlnPlot(object = pbmc, features = row.names(sig.markers)[1:2])
+dev.off()
+
+#setwd("C:\\Users\\寻觅瓦尔登\\Desktop\\DCM 正式研究\\10 成纤维细胞单细胞\\02 HSPGs")
+showGenes=c("ARNTL", "CLOCK", "PER1", "PER2", "PER3", "CRY1", "CRY2", "NR1D1", "RORA") 
+pdf(file="03.TSNE_markerScatter.pdf", width=5, height=5)
+for(showGene in showGenes){
+  print(showGene)
+  p <- FeaturePlot(object = pbmc, reduction = "tsne", features = showGene, cols = c("grey", "red"),pt.size = 0.5,
+            order = TRUE)
+  print(p)
+}
+dev.off()
+
+for(showGene in showGenes){
+  print(showGene)
+  pdf(file=paste0("03.TSNE_markerScatter_", showGene, ".pdf"), width=5, height=5)
+  p <- FeaturePlot(object = pbmc, reduction = "tsne", features = showGene, cols = c("grey", "red"),pt.size = 0.5,
+            order = TRUE)
+  print(p)      
+}
+dev.off() 
+
+pdf(file="03.UMAP_markerScatter.pdf", width=5, height=5)
+for(showGene in showGenes){
+  print(showGene)
+  p <- FeaturePlot(object = pbmc, reduction = "umap", features = showGene, cols = c("grey", "red"),pt.size = 0.5,
+            order = TRUE)
+  print(p)
+}
+dev.off()
+
+for(fowGene in showGenes){
+  print(showGene)
+  pdf(file=paste0("03.UMAP_markerScatter_", showGene, ".pdf"), width=5, height=5)
+  p <- FeaturePlot(object = pbmc, reduction = "umap", features = showGene, cols = c("#000081","#6b2588","#d59c2a","#af1a1a"),pt.size = 0.5,
+            order = TRUE)
+  print(p)
+  dev.off()
+}
+
+pdf(file="03.markerScatter.pdf",width=5,height = 5)
+#FeaturePlot(object = pbmc, features = showGenes, cols = c("grey", "red"),pt.size = 0.5, order = TRUE)
+FeaturePlot(object = pbmc, features = showGenes, cols = c("#000081","#6b2588","#d59c2a","#af1a1a"),pt.size = 0.5,
+            order = TRUE)
+dev.off()
+pdf(file="03.UMAP_markerScatter.pdf",width=5,height = 5)
+FeaturePlot(object = pbmc, features = showGenes, cols = c("#000081","#6b2588","#d59c2a","#af1a1a"),pt.size = 0.5,
+            order = TRUE)
+dev.off()
+
+pdf(file="03.markerBubble.pdf",width=12,height=6)
+cluster10Marker=unique(top10_genes)
+DotPlot(object = pbmc2, features = cluster10Marker)
+dev.off()
+
+save(pbmc,file = "pbmc.Rds")
+
+top10_genes <- c()
+for(i in unique(sig.markers2$cluster)){
+  top10_genes <- c(top10_genes, sig.markers2[sig.markers2$cluster==i, 7][1:10])
+}
+
+showGenes <- c("IL7R", "GZMK", "IL32", "CXCR4", "CD52", "TRAC", "CD3D", "CD2", "TRBC2", "CCL5", "CXCL8", "IL1B", 
+"HLA-DRA", "C1QA", "C1QB", "CXCL3", "HLA-DPA1", "CXCL2", "C1QC","CD74", "SELENOP", "ACTA2", "MYL9", "TAGLN", "TPM2", 
+"CALD1", "MYH11", "DSTN", "PLN", "MFGE8", "XCL2", "XCL1", "KLRD1", "GNLY", "KLRC1", "CD7", "CTSW", "PRF1", "CMC1", 
+"DCN", "LUM" ,"FN1", "MGP" ,"CFH" ,"COL1A2", "AEBP1","IGFBP6", "GSN", "C1R", "MYH10", "MAP1B" ,"IGFBP2", "SPARC", 
+"VWF", "IFI27", "PECAM1", "AQP1", "SPRY1", "SPARCL1", "GNG11", "IGFBP4", "CAVIN2", "ADGRL4", "C11ORF96", "IGFBP5", 
+"CRISPLD2", "MT2A", "ADIRF", "MT1M", "PLAC9", "NDUFA4L2", "IGHA1", "MZB1", "SSR4", "PRDX4", "FKBP11", "SEC11C", 
+"QPCT","LMF1", "MS4A1", "LY9", "BANK1", "ARHGAP24", "CD79B", "LTB", "LINC00926", "STAG3", "GATA2", "HPGDS", "HPGD", 
+"KIT", "IL1RL1", "LAPTM4A", "MLPH", "VWA5A", "RGS13", "LTC4S")
+showGenes<-showGenes[-64]
+df <- AverageExpression(pbmc2, verbose=F)
+df <- df$RNA
+df <- t(df[showGenes,])
+pdf(file="top10_genes_heatmap1.pdf", height=15, width=45)
+pheatmap(df, cluster_rows=F, cluster_cols=F, scale="column", fontsize=40)
+dev.off()
+
+df <- AverageExpression(pbmc, verbose=F)
+df <- df$RNA
+df <- t(df[showGenes,])
+pdf(file="top10_genes_heatmap2.pdf", height=20, width=45)
+pheatmap(df, cluster_rows=F, cluster_cols=F, scale="column", fontsize=35)
+dev.off()
+###################################04.SingleR R###################################
+counts<-pbmc@assays$RNA@counts
+clusters<-pbmc@meta.data$seurat_clusters
+ann=pbmc@meta.data$orig.ident
+#ref=get(load("ref_Human_all.RData"))
+#ref=celldex::HumanPrimaryCellAtlasData()
+singler=SingleR(test=counts, ref =ref,
+                labels=ref$label.main, clusters = clusters)
+singler$labels
+singler$labels[1] = "T cell"
+singler$labels[2] = "T cell"
+singler$labels[3] = "MonoMaphDC"
+singler$labels[4] = "SMC1"
+singler$labels[5] = "MonoMaphDC"
+singler$labels[6] = "NK"
+singler$labels[7] = "MonoMaphDC"
+singler$labels[8] = "SMC1"
+singler$labels[9] = "SMC2"
+singler$labels[10] = "Fibroblast"
+singler$labels[11] = "EC"
+singler$labels[12] = "MSC"
+singler$labels[13] = "Plasma"
+singler$labels[14] = "B cell"
+singler$labels[15] = "Mast cell"
+singler$labels[16] = "MSC"
+singler$labels[17] = "MonoMaphDC"
+singler$labels[18] = "MonoMaphDC"
+singler$labels[19] = "MSC"
+singler$labels[20] = "MonoMaphDC"
+
+clusterAnn=as.data.frame(singler)
+clusterAnn=cbind(id=row.names(clusterAnn), clusterAnn)
+clusterAnn=clusterAnn[,c("id", "labels")]
+write.table(clusterAnn,file="04.clusterAnn.txt",quote=F,sep="\t", row.names=F)
+singler2=SingleR(test=counts, ref =ref, 
+                 labels=ref$label.main)
+cellAnn=as.data.frame(singler2)
+cellAnn=cbind(id=row.names(cellAnn), cellAnn)
+cellAnn=cellAnn[,c("id", "labels")]
+write.table(cellAnn, file="04.cellAnn.txt", quote=F, sep="\t", row.names=F)
+
+newLabels=singler$labels
+names(newLabels)=levels(pbmc)
+pbmc=RenameIdents(pbmc, newLabels)
+pdf(file="04.TSNE.pdf",width=6.5,height=5)
+TSNEPlot(object = pbmc, pt.size = 0.5, label = TRUE)
+dev.off()
+pdf(file="04.UMAP.pdf",width=6.5,height=5)
+UMAPPlot(object = pbmc, pt.size = 0.5, label = TRUE)
+dev.off()
+
+pbmc.markers=FindAllMarkers(object = pbmc,
+                            only.pos = FALSE,
+                            min.pct = 0.25,
+                            logfc.threshold = logFCfilter)
+sig.cellMarkers=pbmc.markers[(abs(as.numeric(as.vector(pbmc.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc.markers$p_val_adj))<adjPvalFilter),]
+write.table(sig.cellMarkers,file="04.cellMarkers.txt",sep="\t",row.names=T,quote=F)
+
+#ssgsea
+
+
+###################################05.monocle R#########################
+
+monocle.matrix=as.matrix(pbmc@assays$RNA@data)
+monocle.sample=pbmc@meta.data
+monocle.geneAnn=data.frame(gene_short_name = row.names(monocle.matrix), row.names = row.names(monocle.matrix))
+monocle.clusterAnn=clusterAnn
+monocle.markers=sig.markers
+
+
+data <- as(as.matrix(monocle.matrix), "sparseMatrix")
+pd<-new("AnnotatedDataFrame", data = monocle.sample)
+fd<-new("AnnotatedDataFrame", data = monocle.geneAnn)
+cds <- newCellDataSet(data, phenoData = pd, featureData = fd)
+names(pData(cds))[names(pData(cds))=="seurat_clusters"]="Cluster"
+pData(cds)[,"Cluster"]=paste0("cluster",pData(cds)[,"Cluster"])
+
+
+clusterAnn=as.character(monocle.clusterAnn[,2])
+names(clusterAnn)=paste0("cluster",monocle.clusterAnn[,1])
+pData(cds)$cell_type2 <- plyr::revalue(as.character(pData(cds)$Cluster),clusterAnn)
+
+
+cds <- estimateSizeFactors(cds)
+cds <- estimateDispersions(cds)
+cds <- setOrderingFilter(cds, as.vector(sig.markers$gene))
+#plot_ordering_genes(cds)
+cds <- reduceDimension(cds, max_components = 2, reduction_method = "DDRTree")
+-----------------------2022/5/5----------------------------
+cds <- orderCells(cds)#报错：Error in graph.adjacency.dense(adjmatrix, mode = mode, weighted = weighted,  :
+  long vectors not supported yet: ../../src/include/Rinlinedfuns.h:537
+In addition: There were 50 or more warnings (use warnings() to see the first 50)
+
+
+pdf(file="05.trajectory.State.pdf",width=6,height=6)
+plot_cell_trajectory(cds,color_by = "State")
+dev.off()
+
+pdf(file="05.trajectory.Pseudotime.pdf",width=4,height=4)
+plot_cell_trajectory(cds,color_by = "Pseudotime")
+dev.off()
+
+pdf(file="05.trajectory.cellType.pdf",width=4,height=4)
+plot_cell_trajectory(cds,color_by = "cell_type2")
+dev.off()
+
+pdf(file="05.trajectory.cluster.pdf",width=4.5,height=4)
+plot_cell_trajectory(cds, color_by = "Cluster")
+dev.off()
+
+
+groups=subset(pData(cds),select="State")
+pbmc=AddMetaData(object=pbmc, metadata=groups, col.name="group")
+geneList=list()
+for(i in levels(factor(groups$State))){
+  pbmc.markers=FindMarkers(pbmc, ident.1 = i, group.by = "group")
+  sig.markers=pbmc.markers[(abs(as.numeric(as.vector(pbmc.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc.markers$p_val_adj))<adjPvalFilter),]
+  sig.markers=cbind(Gene=row.names(sig.markers), sig.markers)
+  write.table(sig.markers,file=paste0("05.monocleDiff.", i, ".txt"),sep="\t",row.names=F,quote=F)
+  geneList[[i]]=row.names(sig.markers)
+}
+
+unionGenes=Reduce(union,geneList)
+write.table(file="05.monocleDiff.union.txt",unionGenes,sep="\t",quote=F,col.names=F,row.names=F)
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################
+################################################################################
+#################################平滑肌细胞再分群###############################
+################################################################################
+################################################################################
+
+setwd("G:\\swy_TAA\\04 con+TAA_SMC sub-clustering")
+#save(pbmc,file = "Cell cluster.Rdata")
+cells.use <- row.names(pbmc@meta.data)[which(pbmc@meta.data$seurat_clusters == 3 | pbmc@meta.data$seurat_clusters == 7 | pbmc@meta.data$seurat_clusters == 8)]
+#这一步提取所有的平滑肌细胞=========包括cluster5，cluster6，cluster7和cluster9=============================
+length(cells.use)
+pbmc_SMC <-subset(pbmc, cells=cells.use) 
+
+
+pbmc_SMC[["percent.mt"]] <- PercentageFeatureSet(object = pbmc_SMC, pattern = "^MT-")
+
+pdf(file="01.featureViolin.pdf", width=10, height=6)
+VlnPlot(object = pbmc_SMC, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+#pbmc_SMC=subset(x = pbmc_SMC, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 10)    #设置过滤条件
+
+
+pdf(file="01.featureCor.pdf",width=10,height=6)
+plot1 <- FeatureScatter(object = pbmc_SMC, feature1 = "nCount_RNA", feature2 = "percent.mt",pt.size=1.5)
+plot2 <- FeatureScatter(object = pbmc_SMC, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",pt.size=1.5)
+CombinePlots(plots = list(plot1, plot2))
+dev.off()
+
+
+pbmc_SMC <- NormalizeData(object = pbmc_SMC, normalization.method = "LogNormalize", scale.factor = 10000)
+
+pbmc_SMC <- FindVariableFeatures(object = pbmc_SMC, selection.method = "vst", nfeatures = 1500)
+
+top10 <- head(x = VariableFeatures(object = pbmc_SMC), 10)
+pdf(file="01.featureVar.pdf",width=10,height=6)
+plot1 <- VariableFeaturePlot(object = pbmc_SMC)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CombinePlots(plots = list(plot1, plot2))
+dev.off()
+
+
+
+
+
+###################################02.PCA???ɷַ???###################################
+
+pbmc_SMC=ScaleData(pbmc_SMC)          
+pbmc_SMC=RunPCA(object= pbmc_SMC,npcs = 20,pc.genes=VariableFeatures(object = pbmc_SMC))     #PCA
+
+pdf(file="02.pcaGene.pdf",width=10,height=8)
+VizDimLoadings(object = pbmc_SMC, dims = 1:4, reduction = "pca",nfeatures = 20)
+dev.off()
+
+
+pdf(file="02.PCA.pdf",width=6.5,height=6)
+DimPlot(object = pbmc_SMC, reduction = "pca")
+dev.off()
+
+
+pdf(file="02.pcaHeatmap.pdf",width=10,height=8)
+DimHeatmap(object = pbmc_SMC, dims = 1:4, cells = 500, balanced = TRUE,nfeatures = 30,ncol=2)
+dev.off()
+
+
+pbmc_SMC <- JackStraw(object = pbmc_SMC, num.replicate = 100)
+pbmc_SMC <- ScoreJackStraw(object = pbmc_SMC, dims = 1:15)
+pdf(file="02.pcaJackStraw.pdf",width=8,height=6)
+JackStrawPlot(object = pbmc_SMC, dims = 1:15)
+dev.off()
+
+
+
+
+
+###################################03.TSNE###################################
+
+pcSelect=14
+pbmc_SMC <- FindNeighbors(object = pbmc_SMC, dims = 1:pcSelect)       
+pbmc_SMC <- FindClusters(object = pbmc_SMC, resolution = 0.5)        
+pbmc_SMC <- RunTSNE(object = pbmc_SMC, dims = 1:pcSelect,check_duplicates = FALSE)   
+pbmc_SMC <- RunUMAP(object = pbmc_SMC, dims = 1:pcSelect)
+pdf(file="SMC_TSNE.pdf",width=5.5,height=5)
+TSNEPlot(object = pbmc_SMC, pt.size = 1, label = TRUE)   
+dev.off()
+pdf(file="SMC_UMAP.pdf",width=5.5,height=5)
+UMAPPlot(object = pbmc_SMC, pt.size = 1, label = TRUE)   
+dev.off()
+write.table(pbmc_SMC$seurat_clusters,file="03.tsneCluster.txt",quote=F,sep="\t",col.names=F)
+write.table(Embeddings(object = pbmc_SMC[["tsne"]]),file="03.tsneaxis.txt",quote=F,sep="\t",col.names=T)
+
+pbmc_SMC.markers <- FindAllMarkers(object = pbmc_SMC,
+                               only.pos = FALSE,
+                               min.pct = 0.25,
+                               logfc.threshold = logFCfilter)
+sig.markers=pbmc_SMC.markers[(abs(as.numeric(as.vector(pbmc_SMC.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc_SMC.markers$p_val_adj))<adjPvalFilter),]
+write.table(sig.markers,file="03.clusterMarkers.txt",sep="\t",row.names=F,quote=F)
+
+top10 <- pbmc_SMC.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+
+pdf(file="03.tsneHeatmap.pdf",width=15,height=12)
+DoHeatmap(object = pbmc_SMC, features = top10$gene) + NoLegend()
+dev.off()
+
+
+pdf(file="03.markerViolin.pdf",width=10,height=6)
+VlnPlot(object = pbmc_SMC, features = row.names(sig.markers)[1:2])
+dev.off()
+
+#setwd("C:\\Users\\寻觅瓦尔登\\Desktop\\DCM 正式研究\\10 成纤维细胞单细胞\\02 HSPGs")
+showGenes=c("FOS") 
+
+pdf(file="03.markerScatter.pdf",width=5,height = 5)
+#FeaturePlot(object = pbmc_SMC, features = showGenes, cols = c("grey", "red"),pt.size = 1, order = TRUE)
+FeaturePlot(object = pbmc_SMC, features = showGenes, cols = c("#000081","#6b2588","#d59c2a","#af1a1a"),pt.size = 1,
+            order = TRUE)
+dev.off()
+
+
+pdf(file="03.markerBubble.pdf",width=12,height=6)
+cluster10Marker=top10_genes
+DotPlot(object = pbmc2, features = cluster10Marker)
+dev.off()
+
+showGenes <- c('ACTC1', 'ACTA2', 'MYL9', 'CARMN', 'FOS', 'ATF3', 'JUN', 'HSPB8', 'MGP', 'TPM4', 'MYH10')
+pdf(file="SMC_markerBubble.pdf",width=12,height=6)
+DotPlot(object = pbmc_SMC, features = showGenes)
+dev.off()
+
+
+showGenes <- c('ACTC1', 'CARMN', 'ACTA2', 'PLN', 'MYL9', 'FILIP1L', 'RAMP1', 'FLNA', 'ITGA8', 'FOS', 'BRD2',
+'ATF3', 'KLF10', 'JUN', 'RRAD', 'EGR1', 'HSPB8', 'DUSP1', 'GAS6', 'IGFBP2', 'MGP', 'FTH1', 'SPARC', 'FGF1', 'TPM4',
+'MYH10', 'CALD1', 'CCND1', 'MYH11', 'MAP1B')
+showGenes<-showGenes[-25]
+df <- AverageExpression(pbmc_SMC, verbose=F)
+df <- df$RNA
+df <- t(df[showGenes,])
+pdf(file="SMC_heatmap1.pdf", height=10, width=25)
+pheatmap(df, cluster_rows=F, cluster_cols=F, scale="column", fontsize=35)
+dev.off()
+
+newLabels <- c("Stressed SMC1", 
+"Contractile SMC1", 
+"Proliferating SMC1", "Proliferating SMC2", 
+"Stressed SMC1", 
+"Proliferating SMC2", "Proliferating SMC2",
+"Stressed SMC1", "Stressed SMC2")
+names(newLabels) <- 0:8
+pbmc_SMC=RenameIdents(pbmc_SMC, newLabels)
+
+pdf(file="SMC_TSNE.pdf",width=6.5,height=5)
+TSNEPlot(object = pbmc_SMC, pt.size = 1, label = TRUE)
+dev.off()
+
+pbmc_SMC.markers=FindAllMarkers(object = pbmc_SMC,
+                            only.pos = FALSE,
+                            min.pct = 0.25,
+                            logfc.threshold = logFCfilter)
+sig.cellMarkers=pbmc_SMC.markers[(abs(as.numeric(as.vector(pbmc_SMC.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc_SMC.markers$p_val_adj))<adjPvalFilter),]
+
+showGenes <- c('ACTC1', 'CARMN', 'ACTA2', 'PLN', 'MYL9', 'FILIP1L', 'RAMP1', 'FLNA', 'ITGA8', 'FOS', 'BRD2',
+'ATF3', 'KLF10', 'JUN', 'RRAD', 'EGR1', 'HSPB8', 'DUSP1', 'GAS6', 'IGFBP2', 'MGP', 'FTH1', 'SPARC', 'FGF1', 'TPM4',
+'MYH10', 'CALD1', 'CCND1', 'MYH11', 'MAP1B')
+showGenes<-showGenes[-25]
+df <- AverageExpression(pbmc_SMC, verbose=F)
+df <- df$RNA
+df <- t(df[showGenes,])
+pdf(file="SMC_heatmap.pdf", height=10, width=25)
+pheatmap(df, cluster_rows=F, cluster_cols=F, scale="column", fontsize=35)
+dev.off()
+
+# GSVA
+library(tidyverse)
+library(patchwork)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+dge.celltype <- FindMarkers(scRNA, ident.1 = 'Stressed_SMC1', ident.2 = 'Proliferating_SMC1', group.by = 'celltype')
+sig_dge.celltype <- subset(dge.celltype, p_val_adj<0.01&abs(avg_log2FC)>1)
+
+ego_ALL <- enrichGO(gene          = row.names(sig_dge.celltype),
+                   #universe     = row.names(dge.celltype),
+                   OrgDb         = 'org.Hs.eg.db',
+                   keyType       = 'SYMBOL',
+                   ont           = "ALL",
+                   pAdjustMethod = "BH",
+                   pvalueCutoff  = 0.01,
+                   qvalueCutoff  = 0.05)
+
+# 拟时分析
+
+###################################04.SingleR R###################################
+counts<-pbmc_SMC@assays$RNA@counts
+clusters<-pbmc_SMC@meta.data$seurat_clusters
+ann=pbmc_SMC@meta.data$orig.ident
+#ref=get(load("ref_Human_all.RData"))
+#ref=celldex::HumanPrimaryCellAtlasData()
+singler=SingleR(test=counts, ref =ref,
+                labels=ref$label.main, clusters = clusters)
+singler$labels
+singler$labels[1] = "Stressed SMC"
+singler$labels[2] = "Contractile SMC"
+singler$labels[3] = "Proliferating SMC"
+singler$labels[4] = "Stressed SMC"
+singler$labels[5] = "Stressed SMC"
+singler$labels[6] = "Stressed SMC"
+singler$labels[7] = "Stressed SMC"
+singler$labels[8] = "Stressed SMC"
+singler$labels[9] = "Stressed SMC"
+
+clusterAnn=as.data.frame(singler)
+clusterAnn=cbind(id=row.names(clusterAnn), clusterAnn)
+clusterAnn=clusterAnn[,c("id", "labels")]
+write.table(clusterAnn,file="04.clusterAnn.txt",quote=F,sep="\t", row.names=F)
+singler2=SingleR(test=counts, ref =ref, 
+                 labels=ref$label.main)
+cellAnn=as.data.frame(singler2)
+cellAnn=cbind(id=row.names(cellAnn), cellAnn)
+cellAnn=cellAnn[,c("id", "labels")]
+write.table(cellAnn, file="04.cellAnn.txt", quote=F, sep="\t", row.names=F)
+
+newLabels=singler$labels
+names(newLabels)=levels(pbmc_SMC)
+pbmc_SMC=RenameIdents(pbmc_SMC, newLabels)
+pdf(file="04.TSNE.pdf",width=6.5,height=5)
+TSNEPlot(object = pbmc_SMC, pt.size = 1, label = TRUE)
+dev.off()
+
+
+pbmc_SMC.markers=FindAllMarkers(object = pbmc_SMC,
+                            only.pos = FALSE,
+                            min.pct = 0.25,
+                            logfc.threshold = logFCfilter)
+sig.cellMarkers=pbmc_SMC.markers[(abs(as.numeric(as.vector(pbmc_SMC.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc_SMC.markers$p_val_adj))<adjPvalFilter),]
+write.table(sig.cellMarkers,file="04.cellMarkers.txt",sep="\t",row.names=T,quote=F)
+
+
+
+###################################05.monocle R#########################
+
+monocle.matrix=as.matrix(pbmc_SMC@assays$RNA@data)
+monocle.sample=pbmc_SMC@meta.data
+monocle.geneAnn=data.frame(gene_short_name = row.names(monocle.matrix), row.names = row.names(monocle.matrix))
+monocle.clusterAnn=clusterAnn
+monocle.markers=sig.markers
+
+
+data <- as(as.matrix(monocle.matrix), "sparseMatrix")
+pd<-new("AnnotatedDataFrame", data = monocle.sample)
+fd<-new("AnnotatedDataFrame", data = monocle.geneAnn)
+cds <- newCellDataSet(data, phenoData = pd, featureData = fd)
+names(pData(cds))[names(pData(cds))=="seurat_clusters"]="Cluster"
+pData(cds)[,"Cluster"]=paste0("cluster",pData(cds)[,"Cluster"])
+
+
+clusterAnn=as.character(monocle.clusterAnn[,2])
+names(clusterAnn)=paste0("cluster",monocle.clusterAnn[,1])
+pData(cds)$cell_type2 <- plyr::revalue(as.character(pData(cds)$Cluster),clusterAnn)
+
+
+cds <- estimateSizeFactors(cds)
+cds <- estimateDispersions(cds)
+cds <- setOrderingFilter(cds, as.vector(sig.markers$gene))
+#plot_ordering_genes(cds)
+cds <- reduceDimension(cds, max_components = 2, reduction_method = "DDRTree")
+cds <- orderCells(cds)
+
+pdf(file="05.trajectory.State.pdf",width=6,height=6)
+plot_cell_trajectory(cds,color_by = "State")
+dev.off()
+
+pdf(file="05.trajectory.Pseudotime.pdf",width=4,height=4)
+plot_cell_trajectory(cds,color_by = "Pseudotime")
+dev.off()
+
+pdf(file="05.trajectory.cellType.pdf",width=4,height=4)
+plot_cell_trajectory(cds,color_by = "cell_type2")
+dev.off()
+
+pdf(file="05.trajectory.cluster.pdf",width=4.5,height=4)
+plot_cell_trajectory(cds, color_by = "Cluster")
+dev.off()
+
+
+groups=subset(pData(cds),select="State")
+pbmc_SMC=AddMetaData(object=pbmc_SMC, metadata=groups, col.name="group")
+geneList=list()
+for(i in levels(factor(groups$State))){
+  pbmc_SMC.markers=FindMarkers(pbmc_SMC, ident.1 = i, group.by = "group")
+  sig.markers=pbmc_SMC.markers[(abs(as.numeric(as.vector(pbmc_SMC.markers$avg_log2FC)))>logFCfilter & as.numeric(as.vector(pbmc_SMC.markers$p_val_adj))<adjPvalFilter),]
+  sig.markers=cbind(Gene=row.names(sig.markers), sig.markers)
+  write.table(sig.markers,file=paste0("05.monocleDiff.", i, ".txt"),sep="\t",row.names=F,quote=F)
+  geneList[[i]]=row.names(sig.markers)
+}
+
+unionGenes=Reduce(union,geneList)
+write.table(file="05.monocleDiff.union.txt",unionGenes,sep="\t",quote=F,col.names=F,row.names=F)
+
+
+#输出所有细胞中的BMAL1表达
+write.table(file = "BMAL1.txt",t(rt["ARNTL",]),sep="\t",quote=F,row.names=T)
+
+save(pbmc_SMC,file = "pbmc_SMC.Rds")
+
+
+
+
+
+
+
