@@ -1,11 +1,11 @@
 ## 读取数据
-### h5文件
+#### h5文件
 ```R
 data_sample <- Read10X_h5("sample.h5) #读取数据
 seurat_sample <- CreateSeuratObject(counts = data_sample, project = "sample", min.cells = 3, min.feature = 200) #创建seurat对象
 ```
-### 10X数据
-##### 10X数据解压后有barcodes.tsv、genes.tsv、matrix.mtx三个文件
+#### 10X数据
+###### 10X数据解压后有barcodes.tsv、genes.tsv、matrix.mtx三个文件
 ```R
 pbmc.data <- Read10X(data.dir = "dir_path") #读取数据
 seurat_sample <- CreateSeuratObject(counts = pbmc.data, project = "sample", min.cells = 3, min.features = 200) #创建seurat对象
@@ -78,6 +78,7 @@ write.table(Embeddings(object = seurat_data[["umap"]]),file="umapaxis.txt",quote
 ```
 
 ## 细胞注释
+#### 找marker基因
 ```R
 # 找每个cluster的marker基因
 seurat.markers <- FindAllMarkers(object = seurat_data,
@@ -92,7 +93,7 @@ DoHeatmap(object = seurat_data, features = top10.markers$gene) + NoLegend()
 VlnPlot(object = seurat_data, features = row.names(sig.markers)[1:2])
 ```
 
-### 展示感兴趣的基因
+#### 展示感兴趣的基因
 ```R
 for(showGene in showGenes){
   print(showGene)
@@ -113,9 +114,21 @@ avg_exp <- avg_exp$RNA
 avg_exp <- t(avg_exp[showGenes,])
 pheatmap(avg_exp, cluster_rows=F, cluster_cols=F, scale="column", fontsize=40)
 ```
+#### 根据之前的展示对细胞进行手动注释
+###### 1、直接对seurat_data注释
+```R
+new.cluster.cell <- c("cell.type1", "cell.type2", "cell.type3")
+seurat_data@meta.data$celltype <- seurat_data@meta.data$seurat_clusters
+levels(seurat_data@meta.data$celltype) <- new.cluster.cell
+```
+###### 2、用RenameIdents注释
+```R
+new.cluster.cell <- c("cell.type1", "cell.type2", "cell.type3")
+names(new.cluster.cell) <- levels(seurat_data)
+seurat_data <- RenameIdents(seurat_data, new.cluster.cell)
+```
 
+## 拟时分析
+```R
 
-
-
-
-
+```
