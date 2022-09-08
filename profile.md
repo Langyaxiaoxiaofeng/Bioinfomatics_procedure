@@ -42,8 +42,8 @@ plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 CombinePlots(plots = list(plot1, plot2))
 ```
 
-# 数据分析
-## PCA
+## 数据分析
+#### PCA
 ```R
 # ScaleData对基因表达量的数值进行z-score转换，使其符合norm(mean = 0, sd = 1)
 seurat_data = ScaleData(seurat_data)          
@@ -60,7 +60,7 @@ ElbowPlot(seurat_data) #（肘方法）展示PCs的信息量
 pcSelect = 16 #选择合适数量的主成分
 ```
 
-## TSNE
+#### TSNE
 ```R
 seurat_data <- FindNeighbors(object = seurat_data, reduction = "pca", dims = 1:pcSelect)       
 seurat_data <- FindClusters(object = seurat_data, resolution = 0.5)
@@ -70,7 +70,7 @@ write.table(Embeddings(object = seurat_data[["tsne"]]),file="tsneaxis.txt",quote
 TSNEPlot(object = seurat_data, pt.size = 0.5, label = TRUE) 
 ```
 
-## UMAP
+#### UMAP
 ```R
 seurat_data <- RunUMAP(object = seurat_data, dims = 1:pcSelect)
 UMAPPlot(object = seurat_data, pt.size = 0.5, label = TRUE)
