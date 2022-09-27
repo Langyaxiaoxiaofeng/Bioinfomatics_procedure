@@ -10,4 +10,4 @@ BiocManager::install(c("minfi", "ChAMPdata", "Illumina450ProbeVariants.db", "sva
     "FEM", "matrixStats", "missMethyl", "combinat"))
 ```
 
-##
+## 读取处理好的矩阵数据
